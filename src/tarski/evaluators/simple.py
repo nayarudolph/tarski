@@ -1,4 +1,5 @@
 import operator
+import itertools
 
 from .. import errors as err
 from .. import funcsym
@@ -14,10 +15,12 @@ from ..syntax import (
     Formula,
     IfThenElse,
     QuantifiedFormula,
+    Quantifier,
     Tautology,
     Variable,
     builtins,
     ops,
+    symref,
 )
 from ..syntax.algebra import Matrix
 
@@ -46,7 +49,8 @@ def evaluate(element, m: Model, sigma=None):
 
     # Terms
     if isinstance(element, Variable):
-        return sigma[element]  # TODO Finish this, ATM it will raise a runtime error
+        element_symref = symref(element)
+        return sigma[element_symref]
 
     if isinstance(element, (Constant, CompoundTerm, IfThenElse, Matrix, AggregateCompoundTerm)):
         return evaluate_term(element, m, sigma)
@@ -71,7 +75,31 @@ def evaluate_atom(atom: Atom, m: Model, sigma):
 
 
 def evaluate_quantified(formula: Formula, m: Model, sigma):
-    raise NotImplementedError()
+    """Custom implementation of quantified formula evaluation for multiple variables"""
+    sigma = sigma if sigma is not None else {}
+    
+    quantified_vars = formula.variables
+
+    # Get all possible values for each variable
+    instances_per_var = [list(var.sort.domain()) for var in quantified_vars]
+    
+    # Generate all combinations of values for all variables using Cartesian product
+    all_combinations = itertools.product(*instances_per_var)
+
+    def evaluate_for_multiple_variables(combo):
+        """
+        Create a sigma dictionary for the given combination of variables, then evaluate the formula with the model under the new sigma assignment.
+        """
+        quantified_vars_symref = [symref(var) for var in quantified_vars]
+        new_sigma = {**sigma, **dict(zip(quantified_vars_symref, combo))}
+        return evaluate(formula.formula, m, new_sigma)
+    
+    if formula.quantifier == Quantifier.Forall:
+        return all(evaluate_for_multiple_variables(combo) for combo in all_combinations)
+    elif formula.quantifier == Quantifier.Exists:
+        return any(evaluate_for_multiple_variables(combo) for combo in all_combinations)
+    
+    raise NotImplementedError(f"Quantifier {formula.quantifier} not supported")
 
 
 def evaluate_term(term, m: Model, sigma):
