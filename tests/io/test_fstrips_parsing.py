@@ -1,6 +1,7 @@
 import pytest
 
-from tarski.errors import UndefinedPredicate, UndefinedSort
+
+from tarski.errors import UndefinedSort, UndefinedPredicate
 from tarski.fstrips import AddEffect, FunctionalEffect
 from tarski.fstrips.errors import InvalidEffectError
 from tarski.io.fstrips import FstripsReader, ParsingError
@@ -37,6 +38,13 @@ def _test_inputs(inputs, r=None):
     for avoiding duplicate name exceptions, etc, in a sequence of tests.
     """
     return [_test_input(string, rule, r or reader()) for string, rule in inputs]
+
+
+def create_reader(theories=None, strict_with_requirements=True, case_insensitive=False):
+    """ Return a reader configured to raise exceptions on syntax errors """
+    return FstripsReader(raise_on_error=True, theories=theories,
+                         strict_with_requirements=strict_with_requirements,
+                         case_insensitive=case_insensitive)
 
 
 def test_pddl_type_declaration():
@@ -82,8 +90,8 @@ def test_symbol_declarations():
     problem = r.parse_string("(loc1 ?x) - object", get_rule("function_definition"))
     lang = problem.language
     f = lang.get_function("loc1")
-    assert f.codomain == lang.get_sort("object")
-    assert f.domain == (lang.get_sort("object"),)
+    assert f.codomain == lang.get_sort('object')
+    assert f.domain == (lang.get_sort('object'),)
 
 
 def test_init():
@@ -368,4 +376,31 @@ def test_increase_effects():
 
     increase = output[1][0]
     assert isinstance(increase, FunctionalEffect) and isinstance(increase.condition, Tautology)
-    assert str(increase.rhs) == "+(total-cost(), 1.0)"
+    assert str(increase.rhs) == '+(total-cost(), 1.0)'
+
+
+EXISTENTIAL_PRECS_TEST = """
+(define (domain logistics)
+(:requirements :strips :typing :existential-preconditions) 
+(:types  city location thing - object
+         package vehicle - thing
+         truck airplane - vehicle  
+         airport - location)
+(:predicates  (in-city ?l - location ?c - city)
+              (at ?obj - thing ?l - location)
+              (in ?p - package ?veh - vehicle))
+(:action drive
+         :parameters    (?t - truck ?to - location)
+         :precondition  (and 
+                             (exists (?c - city ?from - location)
+                                (and (at ?t ?from) (in-city ?from ?c) (in-city ?to ?c))
+                              ))
+         :effect        (and (not (at ?t ?from))
+                             (at ?t ?to)))
+)
+"""
+
+
+def test_preconditions_with_existential_formulas():
+    with pytest.raises(ParsingError):
+        output = _test_input(EXISTENTIAL_PRECS_TEST, 'domain', create_reader())
